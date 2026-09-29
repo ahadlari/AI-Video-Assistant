@@ -1,8 +1,63 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ChatPanel from "./ChatPanel";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function RightPane({ jobStatus, jobStep, jobProgress, result, error }) {
   const [activeTab, setActiveTab] = useState("overview");
+  
+  // Translation state
+  const [overviewData, setOverviewData] = useState(result);
+  const [targetLang, setTargetLang] = useState("english");
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationCache, setTranslationCache] = useState({});
+
+  // Reset local state when result prop changes (new video analyzed)
+  useEffect(() => {
+    if (result) {
+      setOverviewData(result);
+      setTranslationCache({ "original": result });
+    }
+  }, [result]);
+
+  const handleTranslate = async (lang) => {
+    if (!result || !result.session_id) return;
+    setTargetLang(lang);
+    
+    // Check local cache
+    if (translationCache[lang]) {
+      setOverviewData(translationCache[lang]);
+      return;
+    }
+
+    setIsTranslating(true);
+    try {
+      const res = await fetch(`${API_URL}/api/translate_overview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: result.session_id,
+          target_language: lang
+        }),
+      });
+
+      if (!res.ok) throw new Error("Translation failed");
+
+      const translatedData = await res.json();
+      
+      // Update data and cache
+      setOverviewData({ ...result, ...translatedData });
+      setTranslationCache(prev => ({ ...prev, [lang]: translatedData }));
+    } catch (err) {
+      console.error(err);
+      // Fallback to original
+      setTargetLang("original");
+      setOverviewData(result);
+      alert("Failed to translate overview. Please try again.");
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   if (!jobStatus && !result && !error) {
     return (
@@ -59,7 +114,7 @@ export default function RightPane({ jobStatus, jobStep, jobProgress, result, err
     return null; // Handled in LeftPane
   }
 
-  if (result) {
+  if (result && overviewData) {
     return (
       <div className="right-pane results-pane glass-panel">
         <div className="tabs-header">
@@ -68,12 +123,6 @@ export default function RightPane({ jobStatus, jobStep, jobProgress, result, err
             onClick={() => setActiveTab("overview")}
           >
             Overview
-          </button>
-          <button 
-            className={`tab-btn ${activeTab === "transcript" ? "active" : ""}`}
-            onClick={() => setActiveTab("transcript")}
-          >
-            Transcript
           </button>
           <button 
             className={`tab-btn ${activeTab === "chat" ? "active" : ""}`}
@@ -86,26 +135,49 @@ export default function RightPane({ jobStatus, jobStep, jobProgress, result, err
         <div className="tab-content scrollable">
           {activeTab === "overview" && (
             <div className="overview-tab">
-              <h2 className="result-title">{result.title}</h2>
-              <div className="badge type-badge">{result.video_type}</div>
               
-              <div className="tldr-section section-box">
+              {/* Header with Title and Translate Dropdown */}
+              <div className="overview-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
+                <div>
+                  <h2 className="result-title">{overviewData.title}</h2>
+                  <div className="badge type-badge">{overviewData.video_type}</div>
+                </div>
+                
+                <div className="translation-controls" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  {isTranslating && <span className="spinner-small" style={{ borderColor: "rgba(255,255,255,0.5)", borderTopColor: "white" }}></span>}
+                  <select 
+                    className="modern-select" 
+                    value={targetLang}
+                    onChange={(e) => handleTranslate(e.target.value)}
+                    disabled={isTranslating}
+                    style={{ padding: "0.5rem 1rem", fontSize: "0.85rem", width: "120px" }}
+                    suppressHydrationWarning
+                  >
+                    <option value="original">Original</option>
+                    <option value="english">English</option>
+                    <option value="hindi">Hindi</option>
+                    <option value="hinglish">Hinglish</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="tldr-section section-box" style={{ opacity: isTranslating ? 0.5 : 1, transition: "opacity 0.2s" }}>
                 <h3>TL;DR</h3>
-                <p>{result.tldr}</p>
+                <p>{overviewData.tldr}</p>
               </div>
 
-              <div className="keypoints-section section-box">
+              <div className="keypoints-section section-box" style={{ opacity: isTranslating ? 0.5 : 1, transition: "opacity 0.2s" }}>
                 <h3>Key Points</h3>
                 <ul>
-                  {result.key_points?.map((kp, idx) => (
+                  {overviewData.key_points?.map((kp, idx) => (
                     <li key={idx}>{kp.text}</li>
                   ))}
                 </ul>
               </div>
 
-              {result.sections?.length > 0 && (
-                <div className="dynamic-sections">
-                  {result.sections.map((sec, idx) => (
+              {overviewData.sections?.length > 0 && (
+                <div className="dynamic-sections" style={{ opacity: isTranslating ? 0.5 : 1, transition: "opacity 0.2s" }}>
+                  {overviewData.sections.map((sec, idx) => (
                     <div key={idx} className="section-box">
                       <h3>{sec.heading}</h3>
                       <ul>
@@ -117,14 +189,6 @@ export default function RightPane({ jobStatus, jobStep, jobProgress, result, err
                   ))}
                 </div>
               )}
-            </div>
-          )}
-
-          {activeTab === "transcript" && (
-            <div className="transcript-tab">
-              <div className="transcript-notice">
-                <p>Transcript view is currently not provided by the API schema.</p>
-              </div>
             </div>
           )}
 

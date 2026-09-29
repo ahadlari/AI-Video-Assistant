@@ -46,6 +46,42 @@ def fuzzy_match_proper_nouns(transcript: str, metadata: dict) -> str:
         
     return " ".join(corrected_words)
 
+def translate_analysis(analysis_dict: dict, target_language: str) -> dict:
+    """
+    Translates an existing analysis JSON dictionary into a target language quickly.
+    """
+    import json
+    llm = get_llm(model="ministral-8b-2512")
+    structured_llm = llm.with_structured_output(VideoAnalysisResult)
+    
+    prompt = ChatPromptTemplate.from_messages([
+        (
+            "system",
+            "You are an expert technical translator. You will be provided with a JSON summary of a video.\n"
+            "Your task is to translate the string values into {language} and return a valid JSON object matching the exact schema.\n"
+            "IMPORTANT RULES:\n"
+            "- If {language} is 'hinglish', you MUST use ONLY Roman/Latin script for Hindi words. DO NOT use Devanagari script (e.g., write 'kaam' not 'काम').\n"
+            "- If {language} is 'hindi', you MUST use Devanagari script.\n"
+            "- Keep technical terms in English if appropriate.\n"
+            "- Do not change the JSON structure or keys, only translate the values."
+        ),
+        ("human", "{json_data}"),
+    ])
+    
+    chain = prompt | structured_llm
+    
+    try:
+        result = chain.invoke({
+            "language": target_language,
+            "json_data": json.dumps(analysis_dict, ensure_ascii=False)
+        })
+        if result:
+            return result.model_dump()
+        return analysis_dict # fallback to original if failed
+    except Exception as e:
+        print(f"Translation failed: {e}")
+        return analysis_dict
+
 def analyze_video(transcript: str, language: str = "english", metadata: dict = None) -> VideoAnalysisResult:
     """
     Performs a single-pass extraction to get title, summary, adaptive sections, 

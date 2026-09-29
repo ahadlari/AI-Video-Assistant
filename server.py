@@ -84,6 +84,10 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+
+class TranslateRequest(BaseModel):
+    session_id: str
+    target_language: str
     
 class HistoryItem(BaseModel):
     session_id: str
@@ -260,6 +264,30 @@ def chat_with_video(req: ChatRequest):
             language=req.language
         )
         return ChatResponse(answer=answer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/translate_overview")
+def translate_overview(req: TranslateRequest):
+    session = sessions.get(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    
+    # Check cache
+    if "translations" not in session:
+        session["translations"] = {}
+        # The initial summary is effectively the first translation
+        # But we don't know the exact language it was generated in here easily,
+        # so we'll just let Mistral translate it if requested.
+        
+    if req.target_language in session["translations"]:
+        return session["translations"][req.target_language]
+        
+    try:
+        from core.summarizer import translate_analysis
+        new_analysis = translate_analysis(session["analysis"], req.target_language)
+        session["translations"][req.target_language] = new_analysis
+        return new_analysis
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
