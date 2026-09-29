@@ -1,20 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export default function ChatPanel({ sessionId }) {
+export default function ChatPanel({ sessionId, initialQuestions }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
 
-  const sendMessage = async () => {
-    const question = input.trim();
-    if (!question || loading) return;
+  // Auto-scroll only when new messages arrive
+  useEffect(() => {
+    if (messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [messages]);
 
-    const userMsg = { role: "user", content: question };
-    setMessages((prev) => [...prev, userMsg]);
+  const handleSend = async (question) => {
+    const q = question || input;
+    if (!q.trim() || loading) return;
+
+    const userMsg = { role: "user", content: q.trim() };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     setInput("");
     setLoading(true);
 
@@ -22,120 +32,92 @@ export default function ChatPanel({ sessionId }) {
       const res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, question }),
+        body: JSON.stringify({
+          session_id: sessionId,
+          question: q.trim(),
+          language: "hinglish",
+          history: newMessages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+        }),
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || "Failed to get response");
+        throw new Error("Chat request failed");
       }
 
       const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.answer },
-      ]);
+      setMessages([...newMessages, { role: "assistant", content: data.answer }]);
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${err.message}` },
+      setMessages([
+        ...newMessages,
+        { role: "assistant", content: "Sorry, request process nahi ho payi. Please try again." },
       ]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
-  const clearChat = () => setMessages([]);
-
   return (
-    <div className="chat-section">
-      <div className="chat-section-title">
-        {"\uD83D\uDCAC"} Chat with your Meeting
-      </div>
-
-      {/* Chat Messages */}
-      {messages.length > 0 ? (
-        <div className="chat-container">
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`chat-msg ${
-                msg.role === "user" ? "chat-msg-user" : "chat-msg-bot"
-              }`}
-            >
-              <span
-                className={`chat-label ${
-                  msg.role === "user" ? "chat-label-user" : "chat-label-bot"
-                }`}
+    <div className="chat-panel">
+      {messages.length === 0 && initialQuestions?.length > 0 && (
+        <div className="suggested-questions">
+          <h4>Suggested Questions</h4>
+          <div className="suggestions-list">
+            {initialQuestions.map((q, idx) => (
+              <button
+                key={idx}
+                className="suggestion-btn"
+                onClick={() => handleSend(q)}
+                disabled={loading}
               >
-                {msg.role === "user" ? "You" : "\uD83E\uDD16 Assistant"}
-              </span>
-              <div
-                className={`chat-bubble ${
-                  msg.role === "user"
-                    ? "chat-bubble-user"
-                    : "chat-bubble-bot"
-                }`}
-              >
-                {msg.content}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="chat-msg chat-msg-bot">
-              <span className="chat-label chat-label-bot">
-                {"\uD83E\uDD16"} Assistant
-              </span>
-              <div className="chat-bubble chat-bubble-bot">
-                <span className="spinner" style={{ display: "inline-block" }} />
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="card">
-          <div className="chat-empty">
-            <div className="chat-empty-icon">{"\uD83D\uDCAC"}</div>
-            <div>Ask anything about your meeting transcript</div>
+                {q}
+              </button>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Input Row */}
-      <div className="chat-input-row">
-        <input
-          className="chat-input"
-          type="text"
-          placeholder="What were the main decisions made?"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={loading}
-        />
-        <button
-          className="btn-send"
-          onClick={sendMessage}
-          disabled={loading || !input.trim()}
-        >
-          Send {"\u2192"}
-        </button>
+      <div className="messages-list scrollable">
+        {messages.map((m, i) => (
+          <div key={i} className={`message-bubble ${m.role}`}>
+            <div className="message-sender">{m.role === "user" ? "You" : "AI Assistant"}</div>
+            <div className="message-text">
+              {m.role === "assistant" ? (
+                <ReactMarkdown>{m.content}</ReactMarkdown>
+              ) : (
+                m.content
+              )}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="message-bubble assistant loading">
+            <div className="typing-indicator">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Clear Chat */}
-      {messages.length > 0 && (
-        <div style={{ marginTop: "0.75rem" }}>
-          <button className="btn-secondary" onClick={clearChat}>
-            {"\uD83D\uDDD1\uFE0F"} Clear Chat
-          </button>
-        </div>
-      )}
+      <div className="chat-input-area">
+        <input
+          type="text"
+          className="modern-input chat-input"
+          placeholder="Ask a question about the video..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSend()}
+          disabled={loading}
+          suppressHydrationWarning
+        />
+        <button
+          className="modern-button send-btn"
+          onClick={() => handleSend()}
+          disabled={loading || !input.trim()}
+        >
+          Send
+        </button>
+      </div>
     </div>
   );
 }

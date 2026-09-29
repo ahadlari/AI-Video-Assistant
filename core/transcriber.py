@@ -12,8 +12,10 @@ WHISPER_MODEL = os.getenv("WHISPER_MODEL", "small")
 
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
-SARVAM_STT_TRANSLATE_URL = "https://api.sarvam.ai/speech-to-text-translate"
-SARVAM_MODEL = os.getenv("SARVAM_STT_MODEL", "saaras:v2.5")
+import json
+
+SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text"
+SARVAM_MODEL = os.getenv("SARVAM_STT_MODEL", "saaras:v4")
 
 _model = None
 
@@ -37,15 +39,28 @@ def transcribe_chunk_whisper(chunk_path: str) -> str:
     return result["text"]  
 
 
-def _send_to_sarvam(piece_path: str) -> str:
-    """Send one ≤30s WAV file to Sarvam and return the English transcript."""
+def _send_to_sarvam(piece_path: str, metadata: dict = None) -> str:
+    """Send one ≤30s WAV file to Sarvam and return the transcript."""
     headers = {"api-subscription-key": SARVAM_API_KEY}
+
+    keyterms = []
+    if metadata:
+        if metadata.get("title"): keyterms.append(metadata["title"])
+        if metadata.get("channel"): keyterms.append(metadata["channel"])
+        if metadata.get("tags"): keyterms.extend(metadata["tags"])
 
     with open(piece_path, "rb") as f:
         files = {"file": (os.path.basename(piece_path), f, "audio/wav")}
-        data = {"model": SARVAM_MODEL, "with_diarization": "false"}
+        data = {
+            "model": SARVAM_MODEL, 
+            "language_code": "hi-IN",
+            "with_diarization": "false"
+        }
+        if keyterms:
+            data["keyterms"] = json.dumps(keyterms[:10]) # Send top 10 keyterms
+        
         response = requests.post(
-            SARVAM_STT_TRANSLATE_URL,
+            SARVAM_STT_URL,
             headers=headers,
             files=files,
             data=data,
@@ -60,7 +75,7 @@ def _send_to_sarvam(piece_path: str) -> str:
     return response.json().get("transcript", "")
 
 
-def transcribe_chunk_sarvam(chunk_path: str) -> str:
+def transcribe_chunk_sarvam(chunk_path: str, metadata: dict = None) -> str:
     """
     Sarvam sync API only accepts ≤30s audio. We split this chunk into
     25-second pieces, send each separately, and join the transcripts.
@@ -81,7 +96,7 @@ def transcribe_chunk_sarvam(chunk_path: str) -> str:
 
         try:
             print(f"  -> Sarvam piece {i + 1}/{total_pieces} ...")
-            full_text += _send_to_sarvam(piece_path) + " "
+            full_text += _send_to_sarvam(piece_path, metadata) + " "
         finally:
             if os.path.exists(piece_path):
                 os.remove(piece_path)
@@ -92,18 +107,18 @@ def transcribe_chunk_sarvam(chunk_path: str) -> str:
 
 
 
-def transcribe_chunk(chunk_path: str, language: str = "english") -> str:
+def transcribe_chunk(chunk_path: str, language: str = "english", metadata: dict = None) -> str:
     """
     Route one chunk to Whisper or Sarvam depending on language choice.
     - english  → Whisper (local model)
     - hinglish → Sarvam (translates to English while transcribing)
     """
     if language.lower() == "hinglish":
-        return transcribe_chunk_sarvam(chunk_path)
+        return transcribe_chunk_sarvam(chunk_path, metadata)
     return transcribe_chunk_whisper(chunk_path)
 
 
-def transcribe_all(chunks: list, language: str = "english") -> str:
+def transcribe_all(chunks: list, language: str = "english", metadata: dict = None) -> str:
 
     full_transcript = "" 
 
@@ -114,7 +129,7 @@ def transcribe_all(chunks: list, language: str = "english") -> str:
 
         print(f"Transcribing chunk {i + 1}/{len(chunks)}...")
 
-        text = transcribe_chunk(chunk, language=language)  
+        text = transcribe_chunk(chunk, language=language, metadata=metadata)  
 
         full_transcript += text + " "  
 

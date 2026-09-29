@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import Sidebar from "@/components/Sidebar";
-import ResultsDashboard from "@/components/ResultsDashboard";
-import ChatPanel from "@/components/ChatPanel";
+import { useState, useEffect } from "react";
+import LeftPane from "@/components/LeftPane";
+import RightPane from "@/components/RightPane";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -11,11 +10,60 @@ export default function Home() {
   const [source, setSource] = useState("");
   const [language, setLanguage] = useState("english");
   const [loading, setLoading] = useState(false);
+  
+  const [jobId, setJobId] = useState(null);
+  const [jobStatus, setJobStatus] = useState(null); // processing, done, error
+  const [jobStep, setJobStep] = useState(null);
+  const [jobProgress, setJobProgress] = useState(0);
+
+  const [metadata, setMetadata] = useState(null);
   const [result, setResult] = useState(null);
-  const [sessionId, setSessionId] = useState(null);
   const [error, setError] = useState(null);
-  const [pipelineDone, setPipelineDone] = useState(false);
-  const [pipelineSteps, setPipelineSteps] = useState({});
+
+  // Poll for status when jobId is present
+  useEffect(() => {
+    let interval;
+    if (jobId && jobStatus !== "done" && jobStatus !== "error") {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/status/${jobId}`);
+          if (!res.ok) {
+            throw new Error(`Server error: ${res.status}`);
+          }
+          const data = await res.json();
+          setJobStatus(data.status);
+          setJobStep(data.step);
+          setJobProgress(data.progress || 0);
+
+          if (data.status === "done") {
+            setResult(data.result);
+          } else if (data.status === "error") {
+            setError(data.error || "An unknown error occurred during processing.");
+          }
+        } catch (err) {
+          setError(`Failed to fetch status: ${err.message}`);
+          setJobStatus("error");
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [jobId, jobStatus]);
+
+  const fetchMetadata = async (url) => {
+    try {
+      const res = await fetch(`${API_URL}/api/metadata`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: url })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMetadata(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch metadata", e);
+    }
+  };
 
   const handleAnalyse = async () => {
     if (!source.trim() || loading) return;
@@ -23,116 +71,76 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setSessionId(null);
-    setPipelineDone(false);
+    setJobId(null);
+    setJobStatus(null);
+    setMetadata(null);
 
-    // Simulate pipeline progress on the frontend
-    const steps = ["audio", "transcript", "title", "summary", "extract", "rag"];
-    const stepDurations = [2000, 8000, 4000, 6000, 8000, 3000];
-
-    let currentStepIndex = 0;
-    const newSteps = {};
-
-    const progressInterval = setInterval(() => {
-      if (currentStepIndex < steps.length) {
-        // Mark previous step as done
-        if (currentStepIndex > 0) {
-          newSteps[steps[currentStepIndex - 1]] = "done";
-        }
-        // Mark current step as active
-        newSteps[steps[currentStepIndex]] = "active";
-        setPipelineSteps({ ...newSteps });
-        currentStepIndex++;
-      }
-    }, 3000);
+    // Try fetching metadata early for preview
+    await fetchMetadata(source.trim());
 
     try {
       const res = await fetch(`${API_URL}/api/analyse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: source.trim(), language }),
+        body: JSON.stringify({ 
+          source: source.trim(), 
+          audio_language: language,
+          summary_language: "english"
+        }),
       });
-
-      clearInterval(progressInterval);
 
       if (!res.ok) {
         const errData = await res.json();
+        // Specific handling for 429 and 403 as requested
+        if (res.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+        } else if (res.status === 403) {
+          throw new Error("Access forbidden or video download failed. Please try a different video or try again.");
+        }
         throw new Error(errData.detail || `Server error: ${res.status}`);
       }
 
       const data = await res.json();
-
-      // Mark all steps as done
-      const doneSteps = {};
-      steps.forEach((s) => (doneSteps[s] = "done"));
-      setPipelineSteps(doneSteps);
-
-      setResult(data);
-      setSessionId(data.session_id);
-      setPipelineDone(true);
+      if (data.job_id) {
+        setJobId(data.job_id);
+        setJobStatus("queued");
+      }
     } catch (err) {
-      clearInterval(progressInterval);
       setError(err.message);
-      setPipelineSteps({});
+      setJobStatus("error");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleRetry = () => {
+    handleAnalyse();
+  };
+
   return (
-    <div className="app-layout">
-      <Sidebar
-        source={source}
-        setSource={setSource}
-        language={language}
-        setLanguage={setLanguage}
-        onAnalyse={handleAnalyse}
-        loading={loading}
-        pipelineDone={pipelineDone}
-        pipelineSteps={pipelineSteps}
-      />
-
-      <main className="main-content">
-        {/* Hero */}
-        <div className="hero">
-          <h1 className="hero-title">AI Video Assistant</h1>
-          <p className="hero-sub">
-            Transcribe &middot; Summarise &middot; Chat with your meetings
-          </p>
-          <div className="hero-divider" />
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="error-banner">
-            {"\u274C"} Error: {error}
-          </div>
-        )}
-
-        {/* Results */}
-        {result ? (
-          <>
-            <ResultsDashboard result={result} />
-            <div className="section-divider" />
-            <ChatPanel sessionId={sessionId} />
-          </>
-        ) : (
-          /* Empty State */
-          <div className="empty-state">
-            <div className="empty-state-icon">{"\uD83C\uDFAC"}</div>
-            <div className="empty-state-title">Ready to Analyse</div>
-            <div className="empty-state-desc">
-              Paste a YouTube URL or local file path in the sidebar, choose your
-              language, and hit <strong>Analyse</strong> to get started.
-            </div>
-            <div className="empty-state-badges">
-              <span className="badge badge-purple">Transcription</span>
-              <span className="badge badge-cyan">Summarisation</span>
-              <span className="badge badge-green">RAG Chat</span>
-            </div>
-          </div>
-        )}
-      </main>
+    <div className="app-container">
+      <div className="pane left-pane-container">
+        <LeftPane
+          source={source}
+          setSource={setSource}
+          language={language}
+          setLanguage={setLanguage}
+          onAnalyse={handleAnalyse}
+          loading={loading || (jobId && jobStatus !== "done" && jobStatus !== "error")}
+          metadata={metadata}
+          error={error}
+          onRetry={handleRetry}
+        />
+      </div>
+      <div className="pane right-pane-container">
+        <RightPane
+          jobStatus={jobStatus}
+          jobStep={jobStep}
+          jobProgress={jobProgress}
+          result={result}
+          error={error}
+        />
+      </div>
     </div>
   );
 }

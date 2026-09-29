@@ -5,6 +5,15 @@ import os
 DOWNLOAD_DIR = 'downloades'
 os.makedirs(DOWNLOAD_DIR,exist_ok = True)
 
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=10),
+    retry=retry_if_exception_type(Exception),
+    reraise=True
+)
 def download_youtube_audio(url :str) ->str:
     output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
     ydl_opts = {
@@ -18,11 +27,17 @@ def download_youtube_audio(url :str) ->str:
             }
         ],
         "quiet": True,
+        "extractor_args": {"youtube": ["player_client=android"]}, # Bypasses 403 without locking browser cookies
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info).replace(".webm", ".wav").replace(".m4a", ".wav")
-    return filename
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info).replace(".webm", ".wav").replace(".m4a", ".wav")
+        return filename
+    except yt_dlp.utils.DownloadError as e:
+        if "403" in str(e):
+            print("HTTP Error 403 Forbidden. Retrying with backoff...")
+        raise Exception(f"YouTube download failed: {str(e)}")
 
 
 
