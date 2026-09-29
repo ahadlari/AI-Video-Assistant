@@ -68,7 +68,7 @@ def _send_to_sarvam(piece_path: str, metadata: dict = None) -> str:
         )
 
     if not response.ok:
-        print(f"\n❌ Sarvam returned {response.status_code}")
+        print(f"\nError: Sarvam returned {response.status_code}")
         print(f"Response body: {response.text}\n")
         response.raise_for_status()
 

@@ -74,15 +74,15 @@ export default function RightPane({ jobStatus, jobStep, jobProgress, result, err
   if (jobStatus && jobStatus !== "done" && jobStatus !== "error") {
     // Pipeline Progress Simulator/Visualizer
     const steps = [
-      { id: "downloading", label: "Downloading Audio" },
-      { id: "transcribing", label: "Transcribing (Sarvam/Whisper)" },
-      { id: "summarizing", label: "Summarizing (Mistral)" },
-      { id: "indexing", label: "Indexing for Chat" }
+      { id: "downloading", label: "Understanding your video" },
+      { id: "transcribing", label: "Generating transcript" },
+      { id: "summarizing", label: "Creating your summary" },
+      { id: "indexing", label: "Preparing chat" }
     ];
 
     return (
       <div className="right-pane progress-pane glass-panel">
-        <h2 className="progress-title">Analyzing Video...</h2>
+        <h2 className="progress-title">Analyzing your video...</h2>
         <div className="progress-steps">
           {steps.map((step, idx) => {
             let state = "pending";
@@ -162,7 +162,7 @@ export default function RightPane({ jobStatus, jobStep, jobProgress, result, err
               </div>
               
               <div className="tldr-section section-box" style={{ opacity: isTranslating ? 0.5 : 1, transition: "opacity 0.2s" }}>
-                <h3>TL;DR</h3>
+                <h3>Quick Summary</h3>
                 <p>{overviewData.tldr}</p>
               </div>
 
