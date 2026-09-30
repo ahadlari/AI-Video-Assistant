@@ -121,7 +121,13 @@ async def process_video_background(
             print(f"[JOB {job_id}] WARNING: Expected 1024 dim embedding, got {len(vector_chunks[0]['embedding'])}")
 
         # 5. Done
-        print(f"[JOB {job_id}] --- PROCESS COMPLETE --- Sending final data to Spring Boot.")
+        print(f"[JOB {job_id}] --- PROCESS COMPLETE ---")
+        print(f"[JOB {job_id}] SUMMARY:")
+        print(f" - Title: {metadata.get('title')}")
+        print(f" - Key Points Count: {len(analysis_result.key_points) if hasattr(analysis_result, 'key_points') and analysis_result.key_points else 0}")
+        print(f" - Chunks Count: {len(vector_chunks)}")
+        print(f" - Embedding Dimension: {len(vector_chunks[0]['embedding']) if vector_chunks else 0}")
+        
         await send_callback(job_id, {
             "status": "done",
             "progress": 100,
@@ -156,9 +162,9 @@ async def process_video_background(
 
 # ── Internal Endpoints ───────────────────────────────────────────────────────
 
-@app.get("/internal/health", dependencies=[Depends(verify_internal_key)])
+@app.get("/health")
 def health_check():
-    return {"status": "ok", "role": "worker"}
+    return {"status": "ok"}
 
 
 @app.post("/internal/process-video", dependencies=[Depends(verify_internal_key)], status_code=202)

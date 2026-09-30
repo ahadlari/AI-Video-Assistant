@@ -11,10 +11,8 @@ yt-dlp>=2024.5.27                 # Best tool for downloading YouTube audio
 pydub>=0.25.1                     # Leftover usage if needed, mostly ffmpeg CLI now
 ffmpeg-python>=0.2.0              
 
-# ── Speech-to-Text (local Whisper) ────────────────────────────────────────────
-openai-whisper>=20231117          
-torch>=2.2.0                      
-torchaudio>=2.2.0                 
+# ── Speech-to-Text ────────────────────────────────────────────────────────
+# Using Sarvam AI via API, no local ML models needed.
 
 # ── LLM Orchestration — LangChain LCEL + Mistral ──────────────────────────────
 langchain>=0.2.0
