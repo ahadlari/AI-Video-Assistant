@@ -13,11 +13,15 @@ def get_video_metadata(url: str) -> dict:
             "thumbnail": None
         }
 
+    import os
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
-        "skip_download": True
+        "skip_download": True,
+        "extractor_args": {"youtube": ["player_client=android"]}
     }
+    if os.path.exists("cookies.txt"):
+        ydl_opts["cookiefile"] = "cookies.txt"
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:

@@ -27,8 +27,12 @@ def download_youtube_audio(url :str) ->str:
             }
         ],
         "quiet": True,
-        "extractor_args": {"youtube": ["player_client=android"]}, # Bypasses 403 without locking browser cookies
+        "extractor_args": {"youtube": ["player_client=android"]},
     }
+    
+    if os.path.exists("cookies.txt"):
+        print("Using cookies.txt for authentication")
+        ydl_opts["cookiefile"] = "cookies.txt"
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
