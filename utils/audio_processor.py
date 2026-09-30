@@ -42,28 +42,65 @@ def download_youtube_audio(url :str) ->str:
 
 
 def convert_to_wav(input_path: str) -> str:
-    """Convert any audio/video file to WAV format using pydub."""
+    """Convert any audio/video file to 16kHz mono WAV format using ffmpeg CLI to save RAM."""
     output_path = os.path.splitext(input_path)[0] + "_converted.wav"
-    audio = AudioSegment.from_file(input_path)
-    audio = audio.set_channels(1).set_frame_rate(16000) #16khz
-    audio.export(output_path, format="wav")
+    
+    # Run ffmpeg command directly
+    # -i input
+    # -ac 1 (mono)
+    # -ar 16000 (16kHz)
+    # -y (overwrite)
+    import subprocess
+    cmd = [
+        "ffmpeg", "-y", "-i", input_path,
+        "-ac", "1", "-ar", "16000",
+        output_path
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"Failed to convert audio using ffmpeg: {e}")
+        
     return output_path
 
 
+def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
+    """Chunks the wav file into smaller pieces using ffmpeg without loading it all in RAM."""
+    import subprocess
+    import math
+    
+    chunk_secs = chunk_minutes * 60
+    
+    # First get total duration using ffprobe
+    duration_cmd = [
+        "ffprobe", "-v", "error", "-show_entries",
+        "format=duration", "-of",
+        "default=noprint_wrappers=1:nokey=1", wav_path
+    ]
+    try:
+        duration_str = subprocess.check_output(duration_cmd).decode("utf-8").strip()
+        total_duration = float(duration_str)
+    except Exception as e:
+        raise Exception(f"Failed to get audio duration with ffprobe: {e}")
 
-def chunk_audio(wav_path : str , chunk_minutes : int = 10) -> list:
-    audio = AudioSegment.from_wav(wav_path)
-    chunk_ms = chunk_minutes * 60 * 1000 
-
+    num_chunks = math.ceil(total_duration / chunk_secs)
     chunks = []
 
-    for i, start in enumerate(range(0,len(audio),chunk_ms)):
-        chunk = audio[start : start + chunk_ms]
+    for i in range(num_chunks):
+        start_time = i * chunk_secs
         chunk_path = f"{wav_path}_chunk_{i}.wav"
-        chunk.export(chunk_path , format = "wav")
-
-        chunks.append(chunk_path)
-    
+        
+        cmd = [
+            "ffmpeg", "-y", "-i", wav_path,
+            "-ss", str(start_time), "-t", str(chunk_secs),
+            "-acodec", "copy", chunk_path
+        ]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            chunks.append(chunk_path)
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"Failed to create chunk {i} using ffmpeg: {e}")
+            
     return chunks
 
 def process_input(source: str) -> list:

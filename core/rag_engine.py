@@ -1,9 +1,7 @@
 import os
-from langchain_mistralai import ChatMistralAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_mistralai import ChatMistralAI, MistralAIEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import HumanMessage, AIMessage
-from core.vector_store import build_vector_store, get_retriever
 
 CHAT_SYSTEM_PROMPT = """\
 You are a friendly, concise AI Video Assistant. You help users understand a video they just analyzed.
@@ -40,35 +38,24 @@ def get_llm():
     )
 
 
-def format_docs(docs):
-    """Format retrieved documents. If no relevant docs, return empty string."""
-    if not docs:
-        return "(No relevant context found for this query.)"
-    return "\n\n".join([doc.page_content for doc in docs])
+def get_embeddings():
+    """Returns Mistral Embeddings model which produces 1024-dim vectors."""
+    return MistralAIEmbeddings(
+        model="mistral-embed",
+        mistral_api_key=os.getenv("MISTRAL_API_KEY")
+    )
 
 
-def build_rag_chain(transcript: str):
-    """Build an isolated RAG chain for a single video session."""
-    vector_store = build_vector_store(transcript)
-    retriever = get_retriever(vector_store, k=4)
-    return {
-        "retriever": retriever,
-        "vector_store": vector_store,
-    }
-
-
-def _classify_query(question: str) -> str:
+def classify_query(question: str) -> str:
     """Quick heuristic: is this a greeting/instruction or a real question?"""
     q = question.strip().lower()
     greetings = ["hello", "hi", "hey", "hola", "namaste", "salam", "yo",
                  "thanks", "thank you", "shukriya", "dhanyavad", "ok", "okay",
                  "haan", "theek hai", "acha", "bye", "goodbye"]
     
-    # Check if it's a pure greeting
     if q in greetings:
         return "greeting"
     
-    # Check if it's a formatting/language instruction (no question words)
     instruction_keywords = ["reply in", "respond in", "answer in", "baat karo",
                             "roman english", "hinglish me", "hindi me", "english me",
                             "shorter", "chhota", "lambe", "detail me mat",
@@ -80,7 +67,7 @@ def _classify_query(question: str) -> str:
     return "question"
 
 
-def _rewrite_query_for_retrieval(question: str, history: list) -> str:
+def rewrite_query_for_retrieval(question: str, history: list) -> str:
     """If the question is a follow-up like 'aur detail me batao', rewrite it
     using history so the retriever can find relevant chunks."""
     followup_phrases = ["aur", "aur batao", "detail", "elaborate", "explain more",
@@ -90,37 +77,26 @@ def _rewrite_query_for_retrieval(question: str, history: list) -> str:
     is_followup = any(q.startswith(p) or q == p for p in followup_phrases)
     
     if is_followup and history:
-        # Find the last substantive question (skip greetings/instructions)
         for msg in reversed(history):
-            if msg["role"] == "user" and _classify_query(msg["content"]) == "question":
+            if msg["role"] == "user" and classify_query(msg["content"]) == "question":
                 return f"{msg['content']} — {question}"
         
     return question
 
 
-def ask_question(rag_bundle, question: str, history: list = None, language: str = "english") -> str:
-    """Ask a question with conversation history support."""
+def ask_question(context_text: str, question: str, history: list = None, language: str = "english") -> str:
+    """Ask a question with conversation history support using raw context text."""
     if history is None:
         history = []
     
-    retriever = rag_bundle["retriever"]
     llm = get_llm()
+    query_type = classify_query(question)
     
-    query_type = _classify_query(question)
-    
-    # For greetings/instructions, don't waste a retrieval call
     if query_type in ("greeting", "instruction"):
         context_text = "(No retrieval needed — this is a greeting or instruction.)"
-    else:
-        # Rewrite follow-up queries using history
-        search_query = _rewrite_query_for_retrieval(question, history)
-        docs = retriever.invoke(search_query)
-        context_text = format_docs(docs)
     
-    # Build the prompt with history
     messages = [("system", CHAT_SYSTEM_PROMPT.format(context=context_text))]
     
-    # Add last 6 messages of history
     recent_history = history[-6:] if history else []
     for msg in recent_history:
         if msg["role"] == "user":
@@ -128,7 +104,6 @@ def ask_question(rag_bundle, question: str, history: list = None, language: str 
         else:
             messages.append(("assistant", msg["content"]))
     
-    # Build the final user message with language enforcement
     lang_lower = language.strip().lower()
     if lang_lower == "hinglish":
         lang_instruction = "\n\n[LANGUAGE: Reply in Hinglish using ONLY Roman/Latin script. Do NOT use Devanagari characters. Transliterate all Hindi words into Roman letters.]"
@@ -144,3 +119,4 @@ def ask_question(rag_bundle, question: str, history: list = None, language: str 
     
     answer = chain.invoke({})
     return answer
+

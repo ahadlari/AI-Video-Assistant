@@ -1,80 +1,42 @@
 """
-FastAPI Backend for AI Video Assistant
+FastAPI AI Worker Service for AI Video Assistant.
+This service is internal and should only be called by the Spring Boot backend.
+It handles video downloading, transcription, summarization, and RAG search.
 """
+
+import os
+import uuid
+import asyncio
+import httpx
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, UploadFile, File, Form, Depends
 
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
-import time
-import uuid
-import asyncio
-from datetime import datetime
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List, Literal
-
 from utils.audio_processor import process_input, cleanup_audio_files
 from core.transcriber import transcribe_all
 from core.summarizer import analyze_video
-from core.rag_engine import build_rag_chain, ask_question
 from core.video_info import get_video_metadata
-from core.models import VideoAnalysisResult
+from core.rag_engine import ask_question, get_embeddings
 
-# ── App Setup ────────────────────────────────────────────────────────────────────
-app = FastAPI(title="AI Video Assistant API", version="2.0.0")
+app = FastAPI(title="AI Worker Service", version="2.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+INTERNAL_KEY = os.getenv("INTERNAL_API_KEY")
+if not INTERNAL_KEY or INTERNAL_KEY == "dev_secret_key_123":
+    raise RuntimeError("INTERNAL_API_KEY is not set securely! Generate one using 'openssl rand -base64 32'")
 
-# ── In-memory stores ─────────────────────────────────────────────────────────────
-# Cache: url -> { 'transcript': str, 'analysis': dict, 'rag_chain': object, 'metadata': dict }
-url_cache: Dict[str, Any] = {}
+SPRING_BOOT_URL = os.getenv("SPRING_BOOT_URL", "http://localhost:8080")
 
-# Jobs: job_id -> JobStatus state
-jobs: Dict[str, Any] = {}
+# ── Dependencies ─────────────────────────────────────────────────────────────
 
-# Sessions for Chat: session_id -> { 'rag_chain': object, 'source': str, 'analysis': dict }
-sessions: Dict[str, Any] = {}
+def verify_internal_key(x_internal_key: str = Header(...)):
+    if x_internal_key != INTERNAL_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden: Invalid Internal Key")
+    return True
 
-# ── Request / Response Models ────────────────────────────────────────────────────
-class MetadataRequest(BaseModel):
-    source: str
-
-class MetadataResponse(BaseModel):
-    title: str
-    channel: str
-    duration: int
-    thumbnail: Optional[str]
-
-class AnalyseRequest(BaseModel):
-    source: str
-    audio_language: str = "auto" # "auto", "english", "hindi", "hinglish"
-    summary_language: str = "english" # "english", "hindi", "hinglish"
-
-class JobResponse(BaseModel):
-    job_id: str
-
-class AnalysisResultWithSession(VideoAnalysisResult):
-    session_id: str
-    source: str
-
-class JobStatusResponse(BaseModel):
-    status: Literal["queued", "processing", "done", "error"]
-    step: Optional[Literal["downloading", "transcribing", "summarizing", "indexing"]] = None
-    progress: int = 0
-    result: Optional[AnalysisResultWithSession] = None
-    error: Optional[str] = None
-
-class ChatMessage(BaseModel):
-    role: str
-    content: str
+# ── Request Models ───────────────────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
     session_id: str
@@ -85,209 +47,214 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
 
-class TranslateRequest(BaseModel):
-    session_id: str
-    target_language: str
-    
-class HistoryItem(BaseModel):
-    session_id: str
-    source: str
-    title: str
-    tldr: str
-    thumbnail: Optional[str]
-    channel: Optional[str]
-    created_at: str
+# ── Background Task ──────────────────────────────────────────────────────────
 
-# ── Endpoints ────────────────────────────────────────────────────────────────────
+async def send_callback(job_id: str, payload: dict):
+    """Sends a callback to Spring Boot to update job status and data. Fails gracefully."""
+    print(f"[JOB {job_id}] Sending callback: {payload.get('status')} - {payload.get('step', '')}")
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                f"{SPRING_BOOT_URL}/internal/callback/{job_id}",
+                json=payload,
+                headers={"X-Internal-Key": INTERNAL_KEY},
+                timeout=10.0
+            )
+        except Exception as e:
+            print(f"[JOB {job_id}] WARNING: Callback to Spring Boot failed, but job will continue. Error: {e}")
 
-@app.get("/api/health")
-def health_check():
-    return {"status": "ok", "version": "2.0.0"}
 
-@app.post("/api/metadata", response_model=MetadataResponse)
-def get_metadata(req: MetadataRequest):
-    if not req.source.strip():
-        raise HTTPException(status_code=400, detail="Source URL is required.")
-    metadata = get_video_metadata(req.source)
-    if not metadata["title"] or metadata["title"] == "Unknown Title":
-        raise HTTPException(status_code=404, detail="Invalid video URL or video is private.")
-    return metadata
-
-def process_video_task(job_id: str, source: str, audio_language: str, summary_language: str):
+async def process_video_background(
+    job_id: str, 
+    session_id: str, 
+    source: str, 
+    audio_language: str, 
+    summary_language: str,
+    file_path: Optional[str] = None
+):
     try:
-        jobs[job_id]["status"] = "processing"
+        # 1. Start / Downloading
+        print(f"\n[JOB {job_id}] --- STARTING PROCESS ---")
+        print(f"[JOB {job_id}] Target source: {file_path if file_path else source}")
+        await send_callback(job_id, {"status": "processing", "step": "downloading", "progress": 10})
         
-        # Check cache first
-        if source in url_cache:
-            jobs[job_id]["step"] = "indexing"
-            jobs[job_id]["progress"] = 100
-            
-            cached_data = url_cache[source]
-            session_id = str(uuid.uuid4())[:8]
-            sessions[session_id] = {
-                "rag_chain": cached_data["rag_chain"],
-                "source": source,
-                "analysis": cached_data["analysis"],
-                "metadata": cached_data["metadata"]
-            }
-            
-            jobs[job_id]["status"] = "done"
-            jobs[job_id]["result"] = {
-                "session_id": session_id,
-                "source": source,
-                **cached_data["analysis"]
-            }
-            return
-
-        # Fetch metadata for history
-        metadata = get_video_metadata(source)
-        if not metadata["title"] or metadata["title"] == "Unknown Title":
-            raise Exception("Invalid video URL or video is private.")
-
-        # 1. Downloading & Audio Processing
-        jobs[job_id]["step"] = "downloading"
-        jobs[job_id]["progress"] = 10
-        chunks = process_input(source)
+        target_source = file_path if file_path else source
+        chunks = process_input(target_source)
+        
+        metadata = {"title": "Uploaded File", "description": ""}
+        if not file_path:
+            print(f"[JOB {job_id}] Fetching YouTube metadata...")
+            metadata = get_video_metadata(source)
 
         # 2. Transcription
-        jobs[job_id]["step"] = "transcribing"
-        jobs[job_id]["progress"] = 40
+        print(f"[JOB {job_id}] Starting Transcription...")
+        await send_callback(job_id, {"status": "processing", "step": "transcribing", "progress": 40})
         transcript = transcribe_all(chunks, audio_language, metadata)
-        cleanup_audio_files(chunks)
-
-        # 3. LLM Analysis (Structured JSON)
-        jobs[job_id]["step"] = "summarizing"
-        jobs[job_id]["progress"] = 70
+        
+        # 3. Summarization
+        print(f"[JOB {job_id}] Starting LLM Summarization...")
+        await send_callback(job_id, {"status": "processing", "step": "summarizing", "progress": 70})
         analysis_result = analyze_video(transcript, summary_language, metadata)
-        analysis_dict = analysis_result.model_dump()
+        
+        # 4. Indexing (Generating Embeddings)
+        print(f"[JOB {job_id}] Starting Vector Embedding generation...")
+        await send_callback(job_id, {"status": "processing", "step": "indexing", "progress": 90})
+        
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+        text_chunks = splitter.split_text(transcript)
+        
+        embedder = get_embeddings()
+        embeddings = embedder.embed_documents(text_chunks)
+        
+        vector_chunks = []
+        for i, text in enumerate(text_chunks):
+            vector_chunks.append({
+                "chunk_index": i,
+                "chunk_text": text,
+                "embedding": embeddings[i]
+            })
+            
+        if vector_chunks and len(vector_chunks[0]["embedding"]) != 1024:
+            print(f"[JOB {job_id}] WARNING: Expected 1024 dim embedding, got {len(vector_chunks[0]['embedding'])}")
 
-        # 4. RAG Indexing
-        jobs[job_id]["step"] = "indexing"
-        jobs[job_id]["progress"] = 90
-        rag_chain = build_rag_chain(transcript)
-
-        # Update Cache
-        url_cache[source] = {
-            "transcript": transcript,
-            "analysis": analysis_dict,
-            "rag_chain": rag_chain,
-            "metadata": metadata
-        }
-
-        # Setup session for chat
-        session_id = str(uuid.uuid4())[:8]
-        sessions[session_id] = {
-            "rag_chain": rag_chain,
-            "source": source,
-            "analysis": analysis_dict,
-            "metadata": metadata,
-            "created_at": datetime.utcnow().isoformat()
-        }
-
-        # Complete Job
-        jobs[job_id]["progress"] = 100
-        jobs[job_id]["step"] = None
-        jobs[job_id]["status"] = "done"
-        jobs[job_id]["result"] = {
-            "session_id": session_id,
-            "source": source,
-            **analysis_dict
-        }
-
-    except Exception as e:
-        print(f"Job {job_id} failed: {e}")
-        jobs[job_id]["status"] = "error"
-        jobs[job_id]["error"] = str(e)
-
-@app.post("/api/analyse", response_model=JobResponse)
-def analyse_video(req: AnalyseRequest, background_tasks: BackgroundTasks):
-    if not req.source.strip():
-        raise HTTPException(status_code=400, detail="Source URL is required.")
-
-    job_id = str(uuid.uuid4())
-    jobs[job_id] = {
-        "status": "queued",
-        "step": None,
-        "progress": 0,
-        "result": None,
-        "error": None
-    }
-    
-    background_tasks.add_task(process_video_task, job_id, req.source.strip(), req.audio_language, req.summary_language)
-    return JobResponse(job_id=job_id)
-
-@app.get("/api/status/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return jobs[job_id]
-
-@app.get("/api/history", response_model=List[HistoryItem])
-def get_history():
-    history = []
-    for sid, data in sessions.items():
-        history.append({
-            "session_id": sid,
-            "source": data["source"],
-            "title": data["analysis"]["title"],
-            "tldr": data["analysis"]["tldr"],
-            "thumbnail": data["metadata"].get("thumbnail"),
-            "channel": data["metadata"].get("channel"),
-            "created_at": data.get("created_at", "")
+        # 5. Done
+        print(f"[JOB {job_id}] --- PROCESS COMPLETE --- Sending final data to Spring Boot.")
+        await send_callback(job_id, {
+            "status": "done",
+            "progress": 100,
+            "step": None,
+            "result": {
+                "metadata": metadata,
+                "analysis": analysis_result.model_dump(),
+                "raw_transcript": transcript,
+                "vector_chunks": vector_chunks
+            }
         })
-    return history
+        
+    except Exception as e:
+        error_msg = str(e)
+        print(f"\n[JOB {job_id}] !!! FATAL ERROR !!!")
+        print(f"[JOB {job_id}] Exception Type: {type(e).__name__}")
+        print(f"[JOB {job_id}] Error details: {error_msg}")
+        if "403" in error_msg or "YouTube download failed" in error_msg:
+            print(f"[JOB {job_id}] YT-DLP specific error caught (likely 403 Forbidden).")
+            
+        await send_callback(job_id, {"status": "error", "error": error_msg})
+    finally:
+        print(f"[JOB {job_id}] Cleaning up temp files...")
+        try:
+            if 'chunks' in locals() and chunks:
+                cleanup_audio_files(chunks)
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as cleanup_error:
+            print(f"[JOB {job_id}] Cleanup error: {cleanup_error}")
 
-@app.get("/api/session/{session_id}", response_model=AnalysisResultWithSession)
-def get_session(session_id: str):
-    session = sessions.get(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return {
-        "session_id": session_id,
-        "source": session["source"],
-        **session["analysis"]
-    }
 
-@app.post("/api/chat", response_model=ChatResponse)
-def chat_with_video(req: ChatRequest):
-    session = sessions.get(req.session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    if not req.question.strip():
-        raise HTTPException(status_code=400, detail="Question cannot be empty.")
+# ── Internal Endpoints ───────────────────────────────────────────────────────
 
+@app.get("/internal/health", dependencies=[Depends(verify_internal_key)])
+def health_check():
+    return {"status": "ok", "role": "worker"}
+
+
+@app.post("/internal/process-video", dependencies=[Depends(verify_internal_key)], status_code=202)
+async def process_video(
+    background_tasks: BackgroundTasks,
+    job_id: str = Form(...),
+    session_id: str = Form(...),
+    source: Optional[str] = Form(None),
+    audio_language: str = Form("auto"),
+    summary_language: str = Form("english"),
+    file: Optional[UploadFile] = File(None)
+):
+    """
+    Accepts either a source URL or a file upload. Returns 202 Accepted immediately.
+    Runs the heavy AI processing in the background and calls back Spring Boot.
+    """
+    if not source and not file:
+        raise HTTPException(status_code=400, detail="Must provide either 'source' url or 'file'")
+
+    file_path = None
+    if file:
+        # Save the uploaded file temporarily
+        upload_dir = "downloades"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, f"{job_id}_{file.filename}")
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+
+    background_tasks.add_task(
+        process_video_background,
+        job_id=job_id,
+        session_id=session_id,
+        source=source or "",
+        audio_language=audio_language,
+        summary_language=summary_language,
+        file_path=file_path
+    )
+    
+    return {"message": "Processing started in background"}
+
+
+@app.post("/internal/chat", response_model=ChatResponse, dependencies=[Depends(verify_internal_key)])
+def chat(req: ChatRequest):
+    """
+    Handles RAG chat. FastAPI connects to DB with read-only access (via psycopg2 directly or SQLAlchemy) 
+    to fetch vectors, or Spring Boot sends them. 
+    Wait, the plan said "FastAPI ko video_chunks pe read-only DB access do".
+    Let's implement the pgvector similarity search here.
+    """
+    # 1. Embed the question
+    embedder = get_embeddings()
+    query_embedding = embedder.embed_query(req.question)
+    
+    # 2. Search pgvector for relevant chunks
+    import psycopg2
+    DB_URL = os.getenv("SUPABASE_DB_URL")
+    if not DB_URL:
+        raise HTTPException(status_code=500, detail="Worker DB URL not configured")
+        
+    context_text = ""
+    try:
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
+        
+        # Convert list of floats to pgvector format '[f1, f2, ...]'
+        emb_str = "[" + ",".join(map(str, query_embedding)) + "]"
+        
+        # HNSW cosine distance search (embedding <=> query)
+        cur.execute("""
+            SELECT chunk_text 
+            FROM video_chunks 
+            WHERE session_id = %s 
+            ORDER BY embedding <=> %s::vector 
+            LIMIT 4
+        """, (req.session_id, emb_str))
+        
+        rows = cur.fetchall()
+        if rows:
+            context_text = "\n\n".join([row[0] for row in rows])
+        else:
+            context_text = "(No relevant context found in database.)"
+            
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"DB search error: {e}")
+        context_text = "(Error retrieving context from database.)"
+
+    # 3. Generate answer
     try:
         answer = ask_question(
-            session["rag_chain"],
-            req.question.strip(),
-            history=req.history[-6:] if req.history else [],
+            context_text=context_text,
+            question=req.question.strip(),
+            history=req.history,
             language=req.language
         )
         return ChatResponse(answer=answer)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/translate_overview")
-def translate_overview(req: TranslateRequest):
-    session = sessions.get(req.session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found.")
-    
-    # Check cache
-    if "translations" not in session:
-        session["translations"] = {}
-        # The initial summary is effectively the first translation
-        # But we don't know the exact language it was generated in here easily,
-        # so we'll just let Mistral translate it if requested.
-        
-    if req.target_language in session["translations"]:
-        return session["translations"][req.target_language]
-        
-    try:
-        from core.summarizer import translate_analysis
-        new_analysis = translate_analysis(session["analysis"], req.target_language)
-        session["translations"][req.target_language] = new_analysis
-        return new_analysis
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

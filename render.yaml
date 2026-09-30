@@ -1,0 +1,18 @@
+services:
+  # The AI Worker Service (FastAPI)
+  - type: web
+    name: ai-video-worker
+    env: docker
+    region: frankfurt # Or any region
+    plan: free # Free tier (512MB RAM) might struggle with Whisper, recommend starter ($7) if OOM occurs
+    envVars:
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: SPRING_BOOT_URL
+        sync: false
+      - key: SUPABASE_DB_URL
+        sync: false

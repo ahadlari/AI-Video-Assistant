@@ -9,7 +9,9 @@ export default function LeftPane({
   loading,
   metadata,
   error,
-  onRetry
+  onRetry,
+  onReset,
+  hasResult
 }) {
   
   // Extract Youtube Video ID for the iframe
@@ -57,19 +59,36 @@ export default function LeftPane({
           </select>
         </div>
 
-        <button 
-          className="modern-button primary-btn" 
-          onClick={onAnalyse} 
-          disabled={loading || !source.trim()}
-        >
-          {loading ? (
-            <span className="btn-content">
-              <span className="spinner"></span> Processing...
-            </span>
-          ) : (
-            "Analyze Video"
+        <div style={{ display: "flex", gap: "10px", width: "100%" }}>
+          <button 
+            className="modern-button primary-btn" 
+            style={{ flex: 1 }}
+            onClick={onAnalyse} 
+            disabled={loading || !source.trim()}
+          >
+            {loading ? (
+              <span className="btn-content">
+                <span className="spinner"></span> Processing...
+              </span>
+            ) : (
+              "Analyze Video"
+            )}
+          </button>
+
+          {hasResult && (
+            <button 
+              className="modern-button secondary-btn"
+              style={{ 
+                flex: 1, 
+                backgroundColor: "rgba(255, 255, 255, 0.05)",
+                border: "1px solid rgba(255, 255, 255, 0.1)"
+              }}
+              onClick={onReset}
+            >
+              Analyze New Video
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {error && (

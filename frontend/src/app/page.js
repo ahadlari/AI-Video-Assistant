@@ -117,6 +117,19 @@ export default function Home() {
     handleAnalyse();
   };
 
+  const handleReset = () => {
+    setSource("");
+    setLanguage("english");
+    setLoading(false);
+    setJobId(null);
+    setJobStatus(null);
+    setJobStep(null);
+    setJobProgress(0);
+    setMetadata(null);
+    setResult(null);
+    setError(null);
+  };
+
   return (
     <div className="app-container">
       <div className="pane left-pane-container">
@@ -130,6 +143,8 @@ export default function Home() {
           metadata={metadata}
           error={error}
           onRetry={handleRetry}
+          onReset={handleReset}
+          hasResult={!!result}
         />
       </div>
       <div className="pane right-pane-container">
