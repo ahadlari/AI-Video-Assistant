@@ -32,8 +32,9 @@ def fetch_transcript_api(url: str) -> str:
         return None
         
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
-        text = " ".join([t['text'] for t in transcript_list])
+        # Use instantiation and fetch instead of get_transcript
+        transcript_obj = YouTubeTranscriptApi().fetch(video_id, languages=['en', 'hi'])
+        text = " ".join([snippet.text for snippet in transcript_obj.snippets])
         return text
     except Exception as e:
         print(f"Transcript API failed or no captions found: {e}")
