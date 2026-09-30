@@ -76,7 +76,13 @@ def download_youtube_audio_rapidapi(url: str) -> str:
             print(f"RapidAPI Success! Downloading MP3 from {mp3_url[:30]}...")
             
             mp3_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-            mp3_res = requests.get(mp3_url, stream=True, timeout=60)
+            
+            # Use a standard browser User-Agent to prevent 403 Forbidden from CDNs
+            dl_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+            }
+            mp3_res = requests.get(mp3_url, headers=dl_headers, stream=True, timeout=60)
+            
             if mp3_res.ok:
                 with open(mp3_path, 'wb') as f:
                     for chunk in mp3_res.iter_content(chunk_size=8192):
@@ -84,7 +90,8 @@ def download_youtube_audio_rapidapi(url: str) -> str:
                 print(f"MP3 downloaded successfully to {mp3_path}")
                 return mp3_path
             else:
-                raise Exception("Failed to download MP3 file from provided link.")
+                error_body = mp3_res.text[:200]
+                raise Exception(f"Failed to download MP3 from link. Status: {mp3_res.status_code}. Response: {error_body}")
                 
         elif data.get("msg") == "in progress" or data.get("progress", 0) < 100:
             print("Video is being processed by RapidAPI. Waiting 5 seconds...")
