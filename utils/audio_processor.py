@@ -21,85 +21,38 @@ def extract_video_id(url: str) -> str:
             return parsed_url.path.split('/')[2]
     return None
 
-def fetch_transcript_api(url: str) -> str:
-    """
-    OPTION A: Tries to fetch the text transcript directly from YouTube.
-    Bypasses download and AI transcription completely.
-    Returns the full text if successful, or None if no captions exist.
-    """
-    video_id = extract_video_id(url)
-    if not video_id:
-        return None
-        
-    try:
-        # Use instantiation and fetch instead of get_transcript
-        transcript_obj = YouTubeTranscriptApi().fetch(video_id, languages=['en', 'hi'])
-        text = " ".join([snippet.text for snippet in transcript_obj.snippets])
-        return text
-    except Exception as e:
-        print(f"Transcript API failed or no captions found: {e}")
-        return None
-
-def download_youtube_audio_rapidapi(url: str) -> str:
-    """
-    OPTION B: If Transcript fails, use RapidAPI YouTube to MP3 downloader.
-    (Requires RAPIDAPI_KEY in .env)
-    """
-    rapidapi_key = os.getenv("RAPIDAPI_KEY")
-    if not rapidapi_key:
-        raise Exception("RAPIDAPI_KEY is missing. Cannot fallback to audio download.")
-        
-    video_id = extract_video_id(url)
-    if not video_id:
-        raise Exception("Could not extract Video ID for RapidAPI.")
-
-    print(f"Fallback to RapidAPI for downloading video ID: {video_id}")
+def download_youtube_audio(url: str) -> str:
+    """Download audio from YouTube using yt-dlp."""
+    print(f"Downloading YouTube audio from {url}...")
+    import yt_dlp
     
-    headers = {
-        'x-rapidapi-key': rapidapi_key,
-        'x-rapidapi-host': "youtube-mp36.p.rapidapi.com"
+    # Simple extraction since we're running locally/Tunnel, no need for cookies/complex anti-bot
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': os.path.join(DOWNLOAD_DIR, '%(id)s.%(ext)s'),
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
+        'quiet': False,
+        'no_warnings': True,
     }
     
-    api_url = f"https://youtube-mp36.p.rapidapi.com/dl?id={video_id}"
-    
-    import time
-    max_retries = 10
-    for i in range(max_retries):
-        res = requests.get(api_url, headers=headers, timeout=15)
-        if not res.ok:
-            raise Exception(f"RapidAPI failed with status {res.status_code}")
-            
-        data = res.json()
-        if data.get("status") == "ok" and data.get("link"):
-            # Download the actual MP3 file
-            mp3_url = data["link"]
-            print(f"RapidAPI Success! Downloading MP3 from {mp3_url[:30]}...")
-            
-            mp3_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
-            
-            # Use a standard browser User-Agent to prevent 403 Forbidden from CDNs
-            dl_headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
-            }
-            mp3_res = requests.get(mp3_url, headers=dl_headers, stream=True, timeout=60)
-            
-            if mp3_res.ok:
-                with open(mp3_path, 'wb') as f:
-                    for chunk in mp3_res.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                print(f"MP3 downloaded successfully to {mp3_path}")
-                return mp3_path
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            video_id = info['id']
+            # After FFmpegExtractAudio, it saves as .mp3
+            expected_file = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+            if os.path.exists(expected_file):
+                print(f"Successfully downloaded to {expected_file}")
+                return expected_file
             else:
-                error_body = mp3_res.text[:200]
-                raise Exception(f"Failed to download MP3 from link. Status: {mp3_res.status_code}. Response: {error_body}")
-                
-        elif data.get("msg") == "in progress" or data.get("progress", 0) < 100:
-            print("Video is being processed by RapidAPI. Waiting 5 seconds...")
-            time.sleep(5)
-        else:
-            raise Exception(f"RapidAPI returned unexpected response: {data}")
-
-    raise Exception("RapidAPI timed out waiting for the video to process.")
+                raise Exception(f"File not found after download: {expected_file}")
+    except Exception as e:
+        print(f"YT-DLP Error: {e}")
+        raise Exception(f"YouTube download failed: {e}")
 
 
 def convert_to_wav(input_path: str) -> str:
@@ -152,10 +105,10 @@ def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
 
 
 def process_input(source: str) -> list:
-    """Only used for File Uploads or Option B fallback now."""
+    """Processes input source (URL or File), downloads/converts to WAV, and chunks it."""
     if source.startswith("http://") or source.startswith("https://"):
-        print("Detected YouTube URL. Downloading audio via RapidAPI...")
-        wav_path = download_youtube_audio_rapidapi(source)
+        print("Detected YouTube URL. Downloading audio via yt-dlp...")
+        wav_path = download_youtube_audio(source)
     else:
         print("Detected local file. Converting to WAV...")
         wav_path = convert_to_wav(source)
