@@ -42,21 +42,57 @@ def fetch_transcript_api(url: str) -> str:
 
 def download_youtube_audio_rapidapi(url: str) -> str:
     """
-    OPTION B: If Transcript fails, use a RapidAPI YouTube to MP3 downloader.
+    OPTION B: If Transcript fails, use RapidAPI YouTube to MP3 downloader.
     (Requires RAPIDAPI_KEY in .env)
     """
     rapidapi_key = os.getenv("RAPIDAPI_KEY")
     if not rapidapi_key:
         raise Exception("RAPIDAPI_KEY is missing. Cannot fallback to audio download.")
         
-    # Example using 'Youtube MP3' API from RapidAPI (ytstream-download-youtube-videos)
-    # You will need to tell the user which exact API to subscribe to on RapidAPI.
-    # For now, this is a placeholder structure for the API call.
-    print(f"Fallback to RapidAPI for downloading {url}")
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise Exception("Could not extract Video ID for RapidAPI.")
+
+    print(f"Fallback to RapidAPI for downloading video ID: {video_id}")
     
-    # Placeholder: In reality, you'd make the requests.get() here, save the response.content
-    # to a .mp3 file, and return the path.
-    raise Exception("RapidAPI download implementation pending user API key selection.")
+    headers = {
+        'x-rapidapi-key': rapidapi_key,
+        'x-rapidapi-host': "youtube-mp36.p.rapidapi.com"
+    }
+    
+    api_url = f"https://youtube-mp36.p.rapidapi.com/dl?id={video_id}"
+    
+    import time
+    max_retries = 10
+    for i in range(max_retries):
+        res = requests.get(api_url, headers=headers, timeout=15)
+        if not res.ok:
+            raise Exception(f"RapidAPI failed with status {res.status_code}")
+            
+        data = res.json()
+        if data.get("status") == "ok" and data.get("link"):
+            # Download the actual MP3 file
+            mp3_url = data["link"]
+            print(f"RapidAPI Success! Downloading MP3 from {mp3_url[:30]}...")
+            
+            mp3_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.mp3")
+            mp3_res = requests.get(mp3_url, stream=True, timeout=60)
+            if mp3_res.ok:
+                with open(mp3_path, 'wb') as f:
+                    for chunk in mp3_res.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                print(f"MP3 downloaded successfully to {mp3_path}")
+                return mp3_path
+            else:
+                raise Exception("Failed to download MP3 file from provided link.")
+                
+        elif data.get("msg") == "in progress" or data.get("progress", 0) < 100:
+            print("Video is being processed by RapidAPI. Waiting 5 seconds...")
+            time.sleep(5)
+        else:
+            raise Exception(f"RapidAPI returned unexpected response: {data}")
+
+    raise Exception("RapidAPI timed out waiting for the video to process.")
 
 
 def convert_to_wav(input_path: str) -> str:
