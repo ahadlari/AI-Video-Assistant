@@ -1,7 +1,6 @@
 from pydub import AudioSegment
 import os
 import requests
-from youtube_transcript_api import YouTubeTranscriptApi
 from urllib.parse import urlparse, parse_qs
 
 DOWNLOAD_DIR = 'downloades'
