@@ -7,7 +7,7 @@ uvicorn>=0.29.0
 python-multipart>=0.0.9
 
 # ── Audio / Video acquisition ─────────────────────────────────────────────────
-yt-dlp>=2024.4.9                  # Download audio from YouTube URLs
+youtube-transcript-api>=0.6.2     # Free API for getting YouTube captions
 pydub>=0.25.1                     # Leftover usage if needed, mostly ffmpeg CLI now
 ffmpeg-python>=0.2.0              
 

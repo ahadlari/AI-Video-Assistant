@@ -73,23 +73,35 @@ async def process_video_background(
     file_path: Optional[str] = None
 ):
     try:
-        # 1. Start / Downloading
         print(f"\n[JOB {job_id}] --- STARTING PROCESS ---")
         print(f"[JOB {job_id}] Target source: {file_path if file_path else source}")
-        await send_callback(job_id, {"status": "processing", "step": "downloading", "progress": 10})
-        
-        target_source = file_path if file_path else source
-        chunks = process_input(target_source)
         
         metadata = {"title": "Uploaded File", "description": ""}
         if not file_path:
-            print(f"[JOB {job_id}] Fetching YouTube metadata...")
+            print(f"[JOB {job_id}] Fetching YouTube metadata via OEmbed...")
             metadata = get_video_metadata(source)
 
-        # 2. Transcription
-        print(f"[JOB {job_id}] Starting Transcription...")
-        await send_callback(job_id, {"status": "processing", "step": "transcribing", "progress": 40})
-        transcript = transcribe_all(chunks, audio_language, metadata)
+        transcript = None
+        
+        # HYBRID FLOW: OPTION A (Fast Track for YouTube URLs)
+        if not file_path:
+            print(f"[JOB {job_id}] Trying Option A: YouTube Transcript API...")
+            from utils.audio_processor import fetch_transcript_api
+            transcript = fetch_transcript_api(source)
+            if transcript:
+                print(f"[JOB {job_id}] Option A SUCCESS! Bypassing audio download and Whisper/Sarvam.")
+            else:
+                print(f"[JOB {job_id}] Option A FAILED (No captions). Falling back to Option B (RapidAPI Download)...")
+
+        # HYBRID FLOW: OPTION B (File Uploads or Option A Failure)
+        if not transcript:
+            await send_callback(job_id, {"status": "processing", "step": "downloading", "progress": 10})
+            target_source = file_path if file_path else source
+            chunks = process_input(target_source)
+            
+            print(f"[JOB {job_id}] Starting Transcription...")
+            await send_callback(job_id, {"status": "processing", "step": "transcribing", "progress": 40})
+            transcript = transcribe_all(chunks, audio_language, metadata)
         
         # 3. Summarization
         print(f"[JOB {job_id}] Starting LLM Summarization...")

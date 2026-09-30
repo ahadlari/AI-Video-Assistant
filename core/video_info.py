@@ -1,9 +1,9 @@
-import yt_dlp
+import requests
 
 def get_video_metadata(url: str) -> dict:
     """
-    Fetches video metadata (thumbnail, title, channel, duration) using yt-dlp 
-    without actually downloading the video.
+    Fetches video metadata (thumbnail, title, channel) using YouTube's free OEmbed API.
+    This avoids yt-dlp entirely and never gets blocked by 403s.
     """
     if not (url.startswith("http://") or url.startswith("https://")):
         return {
@@ -13,34 +13,32 @@ def get_video_metadata(url: str) -> dict:
             "thumbnail": None
         }
 
-    import os
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "extractor_args": {"youtube": ["player_client=android"]}
-    }
-    if os.path.exists("cookies.txt"):
-        ydl_opts["cookiefile"] = "cookies.txt"
-    
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(url, download=False)
+    try:
+        # YouTube OEmbed API is public and doesn't require keys or cookies
+        oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
+        response = requests.get(oembed_url, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
             return {
-                "title": info.get("title", "Unknown Title"),
-                "channel": info.get("uploader", "Unknown Channel"),
-                "duration": info.get("duration", 0),  # in seconds
-                "thumbnail": info.get("thumbnail"),
-                "description": info.get("description", ""),
-                "tags": info.get("tags", [])
-            }
-        except Exception as e:
-            print(f"Failed to extract metadata: {e}")
-            return {
-                "title": "Unknown Title",
-                "channel": "Unknown Channel",
-                "duration": 0,
-                "thumbnail": None,
-                "description": "",
+                "title": data.get("title", "Unknown Title"),
+                "channel": data.get("author_name", "Unknown Channel"),
+                "duration": 0, # OEmbed doesn't provide duration
+                "thumbnail": data.get("thumbnail_url"),
+                "description": "", 
                 "tags": []
             }
+        else:
+            print(f"OEmbed failed with status: {response.status_code}")
+            
+    except Exception as e:
+        print(f"Failed to extract metadata via OEmbed: {e}")
+
+    return {
+        "title": "Unknown Title",
+        "channel": "Unknown Channel",
+        "duration": 0,
+        "thumbnail": None,
+        "description": "",
+        "tags": []
+    }

@@ -1,59 +1,66 @@
-import yt_dlp
 from pydub import AudioSegment
 import os
+import requests
+from youtube_transcript_api import YouTubeTranscriptApi
+from urllib.parse import urlparse, parse_qs
 
 DOWNLOAD_DIR = 'downloades'
-os.makedirs(DOWNLOAD_DIR,exist_ok = True)
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-import time
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+def extract_video_id(url: str) -> str:
+    """Extracts the video ID from a YouTube URL."""
+    parsed_url = urlparse(url)
+    if parsed_url.hostname in ['youtu.be']:
+        return parsed_url.path[1:]
+    if parsed_url.hostname in ['www.youtube.com', 'youtube.com']:
+        if parsed_url.path == '/watch':
+            return parse_qs(parsed_url.query)['v'][0]
+        if parsed_url.path.startswith(('/embed/', '/v/')):
+            return parsed_url.path.split('/')[2]
+        if parsed_url.path.startswith('/shorts/'):
+            return parsed_url.path.split('/')[2]
+    return None
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=2, min=2, max=10),
-    retry=retry_if_exception_type(Exception),
-    reraise=True
-)
-def download_youtube_audio(url :str) ->str:
-    output_path = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
-    ydl_opts = {
-        "format": "bestaudio/best",
-        "outtmpl": output_path,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "wav",
-                "preferredquality": "192",
-            }
-        ],
-        "quiet": True,
-        "extractor_args": {"youtube": ["player_client=android"]},
-    }
-    
-    if os.path.exists("cookies.txt"):
-        print("Using cookies.txt for authentication")
-        ydl_opts["cookiefile"] = "cookies.txt"
+def fetch_transcript_api(url: str) -> str:
+    """
+    OPTION A: Tries to fetch the text transcript directly from YouTube.
+    Bypasses download and AI transcription completely.
+    Returns the full text if successful, or None if no captions exist.
+    """
+    video_id = extract_video_id(url)
+    if not video_id:
+        return None
+        
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info).replace(".webm", ".wav").replace(".m4a", ".wav")
-        return filename
-    except yt_dlp.utils.DownloadError as e:
-        if "403" in str(e):
-            print("HTTP Error 403 Forbidden. Retrying with backoff...")
-        raise Exception(f"YouTube download failed: {str(e)}")
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en', 'hi'])
+        text = " ".join([t['text'] for t in transcript_list])
+        return text
+    except Exception as e:
+        print(f"Transcript API failed or no captions found: {e}")
+        return None
 
+def download_youtube_audio_rapidapi(url: str) -> str:
+    """
+    OPTION B: If Transcript fails, use a RapidAPI YouTube to MP3 downloader.
+    (Requires RAPIDAPI_KEY in .env)
+    """
+    rapidapi_key = os.getenv("RAPIDAPI_KEY")
+    if not rapidapi_key:
+        raise Exception("RAPIDAPI_KEY is missing. Cannot fallback to audio download.")
+        
+    # Example using 'Youtube MP3' API from RapidAPI (ytstream-download-youtube-videos)
+    # You will need to tell the user which exact API to subscribe to on RapidAPI.
+    # For now, this is a placeholder structure for the API call.
+    print(f"Fallback to RapidAPI for downloading {url}")
+    
+    # Placeholder: In reality, you'd make the requests.get() here, save the response.content
+    # to a .mp3 file, and return the path.
+    raise Exception("RapidAPI download implementation pending user API key selection.")
 
 
 def convert_to_wav(input_path: str) -> str:
     """Convert any audio/video file to 16kHz mono WAV format using ffmpeg CLI to save RAM."""
     output_path = os.path.splitext(input_path)[0] + "_converted.wav"
-    
-    # Run ffmpeg command directly
-    # -i input
-    # -ac 1 (mono)
-    # -ar 16000 (16kHz)
-    # -y (overwrite)
     import subprocess
     cmd = [
         "ffmpeg", "-y", "-i", input_path,
@@ -64,18 +71,13 @@ def convert_to_wav(input_path: str) -> str:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
         raise Exception(f"Failed to convert audio using ffmpeg: {e}")
-        
     return output_path
 
 
 def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
-    """Chunks the wav file into smaller pieces using ffmpeg without loading it all in RAM."""
     import subprocess
     import math
-    
     chunk_secs = chunk_minutes * 60
-    
-    # First get total duration using ffprobe
     duration_cmd = [
         "ffprobe", "-v", "error", "-show_entries",
         "format=duration", "-of",
@@ -89,11 +91,9 @@ def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
 
     num_chunks = math.ceil(total_duration / chunk_secs)
     chunks = []
-
     for i in range(num_chunks):
         start_time = i * chunk_secs
         chunk_path = f"{wav_path}_chunk_{i}.wav"
-        
         cmd = [
             "ffmpeg", "-y", "-i", wav_path,
             "-ss", str(start_time), "-t", str(chunk_secs),
@@ -104,13 +104,14 @@ def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
             chunks.append(chunk_path)
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to create chunk {i} using ffmpeg: {e}")
-            
     return chunks
 
+
 def process_input(source: str) -> list:
+    """Only used for File Uploads or Option B fallback now."""
     if source.startswith("http://") or source.startswith("https://"):
-        print("Detected YouTube URL. Downloading audio...")
-        wav_path = download_youtube_audio(source)
+        print("Detected YouTube URL. Downloading audio via RapidAPI...")
+        wav_path = download_youtube_audio_rapidapi(source)
     else:
         print("Detected local file. Converting to WAV...")
         wav_path = convert_to_wav(source)
@@ -122,23 +123,12 @@ def process_input(source: str) -> list:
 
 
 def cleanup_audio_files(chunk_paths: list):
-    """
-    Safely delete temporary audio files after transcription is complete.
-    Only deletes files that are inside the DOWNLOAD_DIR to prevent
-    accidental deletion of user's original files.
-    """
     deleted = 0
     parent_files = set()
-
     for chunk_path in chunk_paths:
-        # Collect the parent WAV file path (the original download)
-        # Chunks are named like: "original.wav_chunk_0.wav"
-        # So the parent is everything before "_chunk_"
         if "_chunk_" in chunk_path:
             parent = chunk_path.rsplit("_chunk_", 1)[0]
             parent_files.add(parent)
-
-        # Only delete if file is inside DOWNLOAD_DIR (safety check)
         abs_chunk = os.path.abspath(chunk_path)
         abs_download = os.path.abspath(DOWNLOAD_DIR)
         if abs_chunk.startswith(abs_download) and os.path.exists(chunk_path):
@@ -148,7 +138,6 @@ def cleanup_audio_files(chunk_paths: list):
             except OSError as e:
                 print(f"Warning: Could not delete chunk {chunk_path}: {e}")
 
-    # Delete parent WAV files (only if inside DOWNLOAD_DIR)
     for parent in parent_files:
         abs_parent = os.path.abspath(parent)
         abs_download = os.path.abspath(DOWNLOAD_DIR)
@@ -158,15 +147,5 @@ def cleanup_audio_files(chunk_paths: list):
                 deleted += 1
             except OSError as e:
                 print(f"Warning: Could not delete parent {parent}: {e}")
-
-    # Also clean up any leftover .webm files from yt-dlp
-    for f in os.listdir(DOWNLOAD_DIR):
-        if f.endswith(".webm"):
-            fpath = os.path.join(DOWNLOAD_DIR, f)
-            try:
-                os.remove(fpath)
-                deleted += 1
-            except OSError:
-                pass
 
     print(f"Cleanup complete: {deleted} temporary file(s) deleted.")
