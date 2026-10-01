@@ -44,6 +44,10 @@ downloades/
 vector_db/
 app.py.bak
 PROJECT_CONTEXT.md
+sample.wav
+test.py
+package.json
+package-lock.json
 
 # OS Files
 .DS_Store
