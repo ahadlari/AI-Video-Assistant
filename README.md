@@ -1,4 +1,4 @@
-# 🎬 AI Video Assistant (Enterprise Grade)
+# AI Video Assistant (Enterprise Grade)
 
 ![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.4-6DB33F?style=for-the-badge&logo=spring-boot)
@@ -8,7 +8,7 @@
 
 An intelligent, microservice-based video analysis and Q&A application. Feed it a YouTube URL or a local media file, and it automatically processes, transcribes, and summarizes the content using advanced LLMs. Includes a built-in RAG (Retrieval-Augmented Generation) engine to converse directly with your video.
 
-## ✨ Key Features (CV Highlights)
+## Key Features (CV Highlights)
 
 - **"Try Before You Buy" Hybrid Auth:** Implemented a seamless guest-to-authenticated flow. Users can process videos anonymously, and upon signing up (via Clerk), an atomic database update instantly "claims" and links their anonymous session history to their new account.
 - **Microservices Architecture:** Scalable separation of concerns. A lightweight **Spring Boot** API gateway handles auth, sessions, and rate-limiting, while delegating heavy AI processing (transcription/embeddings) to an internal **FastAPI** Python worker.
@@ -17,7 +17,7 @@ An intelligent, microservice-based video analysis and Q&A application. Feed it a
 - **RAG Chat Engine:** Chat directly with your video. Powered by ChromaDB and LangChain to fetch relevant context and answer specific questions instantly.
 - **Premium UI/UX:** Stunning dark-themed, responsive Next.js frontend utilizing glassmorphism, dynamic progress trackers, and real-time polling.
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 graph TD;
@@ -41,7 +41,7 @@ graph TD;
     FastAPI -- "Async Results" --> SpringBoot
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Java 21+ and Maven
@@ -82,7 +82,7 @@ npm run dev
 ```
 *Runs on `http://localhost:3000`*
 
-## 🛠️ Tech Stack
+## Tech Stack
 - **Frontend:** Next.js (App Router), React, Clerk Auth
 - **Backend (API):** Java, Spring Boot, Spring Data JPA, Bucket4j
 - **Backend (AI):** Python, FastAPI, LangChain, ChromaDB
