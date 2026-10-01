@@ -43,6 +43,7 @@ yarn-error.log*
 downloades/
 vector_db/
 app.py.bak
+PROJECT_CONTEXT.md
 
 # OS Files
 .DS_Store
