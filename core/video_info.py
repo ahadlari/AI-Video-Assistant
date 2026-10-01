@@ -1,4 +1,10 @@
 import requests
+import re
+
+def strip_emojis(text: str) -> str:
+    if not text:
+        return text
+    return re.sub(r'[^\u0000-\uFFFF]', '', text)
 
 def get_video_metadata(url: str) -> dict:
     """
@@ -21,8 +27,8 @@ def get_video_metadata(url: str) -> dict:
         if response.status_code == 200:
             data = response.json()
             return {
-                "title": data.get("title", "Unknown Title"),
-                "channel": data.get("author_name", "Unknown Channel"),
+                "title": strip_emojis(data.get("title", "Unknown Title")),
+                "channel": strip_emojis(data.get("author_name", "Unknown Channel")),
                 "duration": 0, # OEmbed doesn't provide duration
                 "thumbnail": data.get("thumbnail_url"),
                 "description": "", 

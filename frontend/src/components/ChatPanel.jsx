@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export default function ChatPanel({ sessionId, initialQuestions }) {
+export default function ChatPanel({ sessionId, initialQuestions, getToken }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -29,9 +29,13 @@ export default function ChatPanel({ sessionId, initialQuestions }) {
     setLoading(true);
 
     try {
+      const token = await getToken();
       const res = await fetch(`${API_URL}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           session_id: sessionId,
           question: q.trim(),

@@ -31,7 +31,7 @@ def _send_to_sarvam(piece_path: str, metadata: dict = None) -> str:
             "with_diarization": "false"
         }
         if keyterms:
-            data["keyterms"] = json.dumps(keyterms[:10]) # Send top 10 keyterms
+            data["prompt"] = ", ".join(keyterms[:10]) # Send top 10 keyterms as prompt
         
         response = requests.post(
             SARVAM_STT_URL,

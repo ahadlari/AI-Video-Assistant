@@ -5,12 +5,20 @@ It handles video downloading, transcription, summarization, and RAG search.
 """
 
 import os
+import sys
+import io
 import uuid
 import asyncio
 import httpx
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, UploadFile, File, Form, Depends
+
+# Force UTF-8 encoding for standard output/error on Windows
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from dotenv import load_dotenv
 load_dotenv()
