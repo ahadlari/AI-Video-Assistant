@@ -15,7 +15,6 @@ export default function RootLayout({ children }) {
         baseTheme: dark,
         variables: {
           colorPrimary: '#f2b824',
-          colorBackground: '#0d071b',
           colorTextOnPrimaryBackground: '#0d071b',
         },
         elements: {
@@ -30,6 +29,9 @@ export default function RootLayout({ children }) {
           formButtonPrimary: {
             fontWeight: '600',
             transition: 'all 0.2s ease',
+          },
+          footer: {
+            display: 'none',
           }
         }
       }}

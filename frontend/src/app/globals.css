@@ -1030,3 +1030,13 @@ body::before {
     font-size: 1.8rem;
   }
 }
+
+/* ── Hide Clerk Watermarks ── */
+.cl-internal-180wb59, 
+.cl-internal-b3al4t,
+.cl-internal-1dauvpw {
+  display: none !important;
+}
+.cl-userButtonPopoverFooter {
+  display: none !important;
+}
