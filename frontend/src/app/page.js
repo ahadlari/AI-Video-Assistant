@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { SignInButton, useAuth, UserButton } from "@clerk/nextjs";
+import { SignInButton, SignUpButton, useAuth, UserButton } from "@clerk/nextjs";
 import LeftPane from "@/components/LeftPane";
 import RightPane from "@/components/RightPane";
 
@@ -401,21 +401,37 @@ export default function Home() {
               </div>
             </>
           ) : (
-            <SignInButton mode="modal">
-              <button 
-                className="premium-btn"
-                style={{
-                  background: 'rgba(25, 17, 44, 0.6)', border: '1px solid rgba(242, 184, 36, 0.3)',
-                  color: '#f2b824', padding: '8px 18px', borderRadius: '999px', cursor: 'pointer',
-                  fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)', transition: 'all 0.2s ease', backdropFilter: 'blur(10px)'
-                }}
-                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(242, 184, 36, 0.15)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(25, 17, 44, 0.6)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-              >
-                Sign In / Sign Up
-              </button>
-            </SignInButton>
+            <>
+              <SignInButton mode="modal">
+                <button 
+                  className="premium-btn"
+                  style={{
+                    background: 'transparent', border: 'none',
+                    color: '#f2b824', padding: '8px 12px', cursor: 'pointer',
+                    fontWeight: '600', fontSize: '0.85rem', transition: 'all 0.2s ease'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.color = '#ffca43'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.color = '#f2b824'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                >
+                  Sign In
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button 
+                  className="premium-btn"
+                  style={{
+                    background: 'rgba(25, 17, 44, 0.6)', border: '1px solid rgba(242, 184, 36, 0.3)',
+                    color: '#f2b824', padding: '8px 18px', borderRadius: '999px', cursor: 'pointer',
+                    fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)', transition: 'all 0.2s ease', backdropFilter: 'blur(10px)'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(242, 184, 36, 0.15)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(25, 17, 44, 0.6)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                >
+                  Sign Up
+                </button>
+              </SignUpButton>
+            </>
           )}
         </div>
       </div>
