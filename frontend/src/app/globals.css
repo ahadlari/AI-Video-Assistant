@@ -1000,3 +1000,29 @@ body::before {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-gold);
 }
+
+/* ── Media Queries for Responsiveness ── */
+@media (max-width: 900px) {
+  .app-layout-wrapper {
+    height: auto !important;
+    min-height: 100vh;
+    overflow-y: auto !important;
+    padding: 1rem !important;
+  }
+  .app-panes-wrapper {
+    flex-direction: column !important;
+    height: auto !important;
+  }
+  .left-pane-container {
+    min-width: 100% !important;
+    flex: none !important;
+  }
+  .right-pane-container {
+    min-width: 100% !important;
+    flex: none !important;
+    min-height: 600px;
+  }
+  .brand-title {
+    font-size: 1.8rem;
+  }
+}

@@ -270,7 +270,7 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: '1.5rem', paddingTop: !userId ? '80px' : '1.5rem', overflow: 'hidden', gap: '20px' }}>
+    <div className="app-layout-wrapper" style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: '1.5rem', paddingTop: !userId ? '80px' : '1.5rem', overflow: 'hidden', gap: '20px' }}>
       
       {/* Anonymous Mode Banner */}
       {!userId && (
@@ -394,7 +394,7 @@ export default function Home() {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '1.5rem', flex: 1, height: 'auto', minHeight: 0 }}>
+      <div className="app-panes-wrapper" style={{ display: 'flex', gap: '1.5rem', flex: 1, height: 'auto', minHeight: 0 }}>
         <div className="pane left-pane-container">
           <LeftPane
             inputType={inputType}
