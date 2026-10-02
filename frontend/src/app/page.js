@@ -25,6 +25,7 @@ export default function Home() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
+  const [showGuestBanner, setShowGuestBanner] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -273,7 +274,7 @@ export default function Home() {
     <div className="app-layout-wrapper" style={{ display: 'flex', flexDirection: 'column', height: '100vh', padding: '1.5rem', paddingTop: !userId ? '80px' : '1.5rem', overflow: 'hidden', gap: '20px' }}>
       
       {/* Anonymous Mode Banner */}
-      {!userId && (
+      {!userId && showGuestBanner && (
         <div style={{
           position: 'absolute', top: '24px', left: '50%', transform: 'translateX(-50%)', 
           background: 'rgba(242, 184, 36, 0.1)', 
@@ -290,21 +291,28 @@ export default function Home() {
             <span style={{ fontSize: '1.2rem' }}>⚠️</span>
             <span>You're in <strong>Guest Mode</strong>. Your session won't be saved permanently. Sign in to keep your conversations.</span>
           </div>
-          <SignInButton mode="modal">
-            <button style={{ 
-              background: '#f2b824', color: '#0d071b', border: 'none', 
-              padding: '8px 18px', borderRadius: '8px', cursor: 'pointer',
-              fontWeight: '600', fontSize: '0.85rem',
-              boxShadow: '0 4px 12px rgba(242, 184, 36, 0.2)',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap'
-            }}
-            onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
-            onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
-            >
-              Sign In to Save
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <SignInButton mode="modal">
+              <button style={{ 
+                background: '#f2b824', color: '#0d071b', border: 'none', 
+                padding: '8px 18px', borderRadius: '8px', cursor: 'pointer',
+                fontWeight: '600', fontSize: '0.85rem',
+                boxShadow: '0 4px 12px rgba(242, 184, 36, 0.2)',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap'
+              }}
+              onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+              onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+              >
+                Sign In to Save
+              </button>
+            </SignInButton>
+            <button 
+              onClick={() => setShowGuestBanner(false)} 
+              style={{ background: 'transparent', border: 'none', color: '#f2b824', cursor: 'pointer', fontSize: '1.2rem', padding: '0 4px' }}>
+              ×
             </button>
-          </SignInButton>
+          </div>
         </div>
       )}
 
@@ -364,34 +372,52 @@ export default function Home() {
           <h1 className="brand-title" style={{ fontSize: '2.5rem', margin: 0 }}>AI Video <span>Assistant</span></h1>
         </div>
 
-        {userId && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <button 
-              className="premium-btn"
-              onClick={() => { setShowHistory(true); fetchHistory(); }}
-              style={{
-                background: 'rgba(25, 17, 44, 0.6)', border: '1px solid rgba(242, 184, 36, 0.3)',
-                color: '#f2b824', padding: '8px 18px', borderRadius: '999px', cursor: 'pointer',
-                fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.2)', transition: 'all 0.2s ease', backdropFilter: 'blur(10px)'
-              }}
-              onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(242, 184, 36, 0.15)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-              onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(25, 17, 44, 0.6)'; e.currentTarget.style.transform = 'translateY(0)'; }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
-              </svg>
-              My History
-            </button>
-            <div style={{ 
-              background: 'rgba(25, 17, 44, 0.6)', padding: '4px', borderRadius: '50%',
-              border: '1px solid rgba(255,255,255,0.1)', display: 'flex',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.2)', backdropFilter: 'blur(10px)'
-            }}>
-              <UserButton afterSignOutUrl="/" appearance={{ elements: { userButtonAvatarBox: { width: '32px', height: '32px' } } }} />
-            </div>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {userId ? (
+            <>
+              <button 
+                className="premium-btn"
+                onClick={() => { setShowHistory(true); fetchHistory(); }}
+                style={{
+                  background: 'rgba(25, 17, 44, 0.6)', border: '1px solid rgba(242, 184, 36, 0.3)',
+                  color: '#f2b824', padding: '8px 18px', borderRadius: '999px', cursor: 'pointer',
+                  fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)', transition: 'all 0.2s ease', backdropFilter: 'blur(10px)'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(242, 184, 36, 0.15)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(25, 17, 44, 0.6)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/>
+                </svg>
+                My History
+              </button>
+              <div style={{ 
+                background: 'rgba(25, 17, 44, 0.6)', padding: '4px', borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.1)', display: 'flex',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.2)', backdropFilter: 'blur(10px)'
+              }}>
+                <UserButton afterSignOutUrl="/" appearance={{ elements: { userButtonAvatarBox: { width: '32px', height: '32px' } } }} />
+              </div>
+            </>
+          ) : (
+            <SignInButton mode="modal">
+              <button 
+                className="premium-btn"
+                style={{
+                  background: 'rgba(25, 17, 44, 0.6)', border: '1px solid rgba(242, 184, 36, 0.3)',
+                  color: '#f2b824', padding: '8px 18px', borderRadius: '999px', cursor: 'pointer',
+                  fontWeight: '600', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)', transition: 'all 0.2s ease', backdropFilter: 'blur(10px)'
+                }}
+                onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(242, 184, 36, 0.15)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(25, 17, 44, 0.6)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+              >
+                Sign In / Sign Up
+              </button>
+            </SignInButton>
+          )}
+        </div>
       </div>
 
       <div className="app-panes-wrapper" style={{ display: 'flex', gap: '1.5rem', flex: 1, height: 'auto', minHeight: 0 }}>
